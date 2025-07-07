@@ -1,0 +1,364 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plan&Study</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.6/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root" className="min-h-screen bg-gray-100"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const subjects = ['Math', 'Science', 'English', 'History', 'Art'];
+    const gradeOptions = ['A', 'B', 'C', 'D', 'F'];
+    const courseTypes = ['Regular', 'AP/Honors'];
+
+    const Plant = ({ level }) => {
+      const plantStages = ['🌱', '🌿', '🌳', '🌴', '🌸'];
+      return (
+        <div className="text-center p-4 bg-green-100 rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold text-green-800">Your Study Plant</h3>
+          <div className="text-6xl animate-pulse">{plantStages[Math.min(level, plantStages.length - 1)]}</div>
+          <p className="text-green-600">Level: {level}</p>
+          <p className="text-sm text-gray-600">Study to water your plant and help it grow!</p>
+        </div>
+      );
+    };
+
+    const Timer = ({ onStudyComplete }) => {
+      const [time, setTime] = useState(25 * 60);
+      const [isActive, setIsActive] = useState(false);
+      const intervalRef = useRef(null);
+
+      useEffect(() => {
+        if (isActive && time > 0) {
+          intervalRef.current = setInterval(() => {
+            setTime((prev) => {
+              if (prev <= 1) {
+                clearInterval(intervalRef.current);
+                setIsActive(false);
+                onStudyComplete();
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        }
+        return () => clearInterval(intervalRef.current);
+      }, [isActive, time, onStudyComplete]);
+
+      const startTimer = () => setIsActive(true);
+      const pauseTimer = () => setIsActive(false);
+      const resetTimer = () => {
+        setIsActive(false);
+        setTime(25 * 60);
+      };
+
+      const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const secs = (seconds % 60).toString().padStart(2, '0');
+        return `${mins}:${secs}`;
+      };
+
+      return (
+        <div className="text-center p-6 bg-blue-100 rounded-lg shadow-md mt-4">
+          <h3 className="text-lg font-semibold text-blue-800">Study Timer</h3>
+          <div className={`text-4tywne4xl font-mono ${isActive ? 'animate-pulse text-blue-600' : 'text-gray-600'}`}>
+            {formatTime(time)}
+          </div>
+          <div className="mt-4 space-x-2">
+            <button
+              onClick={startTimer}
+              disabled={isActive}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+            >
+              Start
+            </button>
+            <button
+              onClick={pauseTimer}
+              disabled={!isActive}
+              className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:bg-gray-400"
+            >
+              Pause
+            </button>
+            <button
+              onClick={resetTimer}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    const App = () => {
+      const [events, setEvents] = useState(() => JSON.parse(localStorage.getItem('events')) || []);
+      const [tasks, setTasks] = useState(() => JSON.parse(localStorage.getItem('tasks')) || {});
+      const [grades, setGrades] = useState(() => JSON.parse(localStorage.getItem('grades')) || {});
+      const [plantLevel, setPlantLevel] = useState(() => parseInt(localStorage.getItem('plantLevel')) || 0);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [reminder, setReminder] = useState('');
+      const [taskText, setTaskText] = useState('');
+      const [selectedSubject, setSelectedSubject] = useState(subjects[0]);
+      const [gradeInput, setGradeInput] = useState({ subject: subjects[0], grade: 'A', courseType: 'Regular' });
+
+      useEffect(() => {
+        localStorage.setItem('events', JSON.stringify(events));
+        localStorage.setItem('tasks', JSON.stringify(tasks));
+        localStorage.setItem('grades', JSON.stringify(grades));
+        localStorage.setItem('plantLevel', plantLevel);
+      }, [events, tasks, grades, plantLevel]);
+
+      useEffect(() => {
+        const calendarEl = document.getElementById('calendar');
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+          initialView: 'dayGridMonth',
+          events: events,
+          dateClick: (info) => {
+            setSelectedDate(info.dateStr);
+          },
+        });
+        calendar.render();
+        return () => calendar.destroy();
+
+
+      }, [events]);
+
+      const addReminder = () => {
+        if (reminder && selectedDate) {
+          setEvents([...events, { title: reminder, date: selectedDate }]);
+          setReminder('');
+        }
+      };
+
+      const addTask = () => {
+        if (taskText && selectedSubject) {
+          setTasks((prev) => ({
+            ...prev,
+            [selectedSubject]: [...(prev[selectedSubject] || []), { text: taskText, completed: false }],
+          }));
+          setTaskText('');
+        }
+      };
+
+      const toggleTask = (subject, index) => {
+        setTasks((prev) => {
+          const newTasks = { ...prev };
+          newTasks[subject][index].completed = !newTasks[subject][index].completed;
+          return newTasks;
+        });
+      };
+
+      const addGrade = () => {
+        if (gradeInput.grade && gradeInput.subject) {
+          setGrades((prev) => ({
+            ...prev,
+            [gradeInput.subject]: { grade: gradeInput.grade, courseType: gradeInput.courseType },
+          }));
+          setGradeInput({ subject: subjects[0], grade: 'A', courseType: 'Regular' });
+        }
+      };
+
+      const calculateGPA = (weighted) => {
+        const gradePoints = { 'A': 4.0, 'B': 3.0, 'C': 2.0, 'D': 1.0, 'F': 0.0 };
+        let totalPoints = 0;
+        let totalCourses = 0;
+
+        Object.values(grades).forEach(({ grade, courseType }) => {
+          let points = gradePoints[grade] || 0;
+          if (weighted && courseType === 'AP/Honors') points += 1.0;
+          totalPoints += points;
+          totalCourses += 1;
+        });
+
+        return totalCourses > 0 ? (totalPoints / totalCourses).toFixed(2) : '0.00';
+      };
+
+      const handleStudyComplete = () => {
+        setPlantLevel((prev) => prev + 1);
+        alert('Great job studying! Your plant has been watered.');
+      };
+
+      return (
+        <div className="container mx-auto p-4">
+          <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">Plan&Study</h1>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="col-span-1">
+              <Plant level={plantLevel} />
+              <Timer onStudyComplete={handleStudyComplete} />
+              <div className="mt-4 p-4 bg-white rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold">GPA Calculator</h3>
+                <div className="flex space-x-2 mb-4 mt-2">
+                  <select
+                    value={gradeInput.subject}
+                    onChange={(e) => setGradeInput({ ...gradeInput, subject: e.target.value })}
+                    className="p-2 border rounded"
+                  >
+                    {subjects.map((subject) => (
+                      <option key={subject} value={subject}>{subject}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={gradeInput.grade}
+                    onChange={(e) => setGradeInput({ ...gradeInput, grade: e.target.value })}
+                    className="p-2 border rounded"
+                  >
+                    {gradeOptions.map((grade) => (
+                      <option key={grade} value={grade}>{grade}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={gradeInput.courseType}
+                    onChange={(e) => setGradeInput({ ...gradeInput, courseType: e.target.value })}
+                    className="p-2 border rounded"
+                  >
+                    {courseTypes.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={addGrade}
+                    className="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+                  >
+                    Add Grade
+                  </button>
+                </div>
+                <div className="text-center">
+                  <p className="text-gray-700">Unweighted GPA: {calculateGPA(false)}</p>
+                  <p className="text-gray-700">Weighted GPA: {calculateGPA(true)}</p>
+                </div>
+                <div className="mt-2">
+                  <h4 className="font-medium text-gray-700">Grades</h4>
+                  <ul className="list-disc pl-5">
+                    {Object.entries(grades).map(([subject, { grade, courseType }]) => (
+                      <li key={subject} className="text-gray-600">
+                        {subject}: {grade} ({courseType})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div id="calendar" className="bg-white p-4 rounded-lg shadow-md"></div>
+              {selectedDate && (
+                <div className="mt-4 p-4 bg-white rounded-lg shadow-md">
+                  <h3 className="text-lg font-semibold">Add Reminder for {selectedDate}</h3>
+                  <input
+                    type="text"
+                    value={reminder}
+                    onChange={(e) => setReminder(e.target.value)}
+                    className="w-full p-2 border rounded mt-2"
+                    placeholder="Enter reminder"
+                  />
+                  <button
+                    onClick={addReminder}
+                    className="mt-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                  >
+                    Add Reminder
+                  </button>
+                </div>
+              )}
+              <div className="mt-6 p-4 bg-white rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold">Tasks</h3>
+                <div className="flex space-x-2 mb-4">
+                  <select
+                    value={selectedSubject}
+                    onChange={(e) => setSelectedSubject(e.target.value)}
+                    className="p-2 border rounded"
+                  >
+                    {subjects.map((subject) => (
+                      <option key={subject} value={subject}>{subject}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={taskText}
+                    onChange={(e) => setTaskText(e.target.value)}
+                    className="flex-1 p-2 border rounded"
+                    placeholder="Enter task"
+                  />
+                  <button
+                    onClick={addTask}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Add Task
+                  </button>
+                </div>
+                {subjects.map((subject) => (
+                  <div key={subject} className="mb-4">
+                    <h4 className="font-medium text-gray-700">{subject}</h4>
+                    <ul className="list-disc pl-5">
+                      {(tasks[subject] || []).map((task, index) => (
+                        <li key={index} className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={task.completed}
+                            onChange={() => toggleTask(subject, index)}
+                            className="mr-2"
+                          />
+                          <span className={task.completed ? 'line-through text-gray-500' : ''}>
+                            {task.text}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
